@@ -19,15 +19,17 @@ You can find my latest CV in this repository. It includes details about my educa
 
 Below are some of my best projects showcasing my skills and experience in Data Science:
 
-1. **Project Title 1**
-   Description: Brief description of the project.
-   Repository: [Link](https://github.com/yourusername/project1)
+1. **Salary_2018**
+   Description: Nice little project about some INE (Insituto Nacional Estadística) survey about salaries in Spain on 2018.
+   It shows some *complex data acquisition* as well as some fancy data preprocessing. Some knowledge about ggplot2 and ggplotly (interactive plots) is used.
+   In addition, a classification approach was intended using some Bayes Classification and Logistic regression.
+   Repository: [Link](https://github.com/marcos-crespo/CV/Salary_2018)
 
-2. **Project Title 2**
+3. **Project Title 2**
    Description: Brief description of the project.
    Repository: [Link](https://github.com/yourusername/project2)
 
-3. **Project Title 3**
+4. **Project Title 3**
    Description: Brief description of the project.
    Repository: [Link](https://github.com/yourusername/project3)
 
