@@ -1,0 +1,583 @@
+---
+title: "Statistical Learning Midterm project"
+author: "Marcos Crespo"
+date: "February 2024"
+output:
+  html_document: 
+    css: my-theme.css
+    theme: journal
+    highlight: haddock
+    number_sections: no
+    toc: true
+    toc_depth: 4
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, message = FALSE)
+
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(MASS)
+library(e1071)
+library(plotly)
+```
+
+## Introduction
+
+This document is the first half of two evaluation assignments for the *Statistical Learning* course for the *MSc in Statistics for Data Science* at *UC3M*. Both parts will compose a full analysis of a selected data.
+
+This first document aim is to make a data preprocessing, an EDA, explain the main predictors affecting the output and try some classification using some of the purely statistical learning tools we have covered during lecture time. The second document objective will be predict the output using some other machine learning tools. The differences between statistical learning and machine learning were conveniently explained during de course.
+
+## The data
+
+The selected data is [*Salary structure survey*](https://www.ine.es/dyngs/INEbase/es/operacion.htm?c=Estadistica_C&cid=1254736177025&menu=resultados&secc=1254736195110&idp=1254735976596#!tabs-1254736195110). The data was publicly collected and published by the Spanish National Institute of Statistics [(INE)](https://www.ine.es/index.htm) anonymized microdata program. The data is collected every 4 years and the latest available survey is from 2018.
+
+In this survey various information about the salary of the respondents was collected. Higher education, working hours, place of work, flexible remuneration or sector are some examples. 
+
+Since the data come from the official body in charge of statistics in Spain, it is really complex and large. The INE provides two very important documents that help us to better understand it. The first is an .xlxs document which explains all the fields collected by the survey, their meaning and possible values. The second is a text document in which they explain some interesting metrics that can be calculated with the collected data. We will use both for our analysis[^1].
+
+[^1]:If all the specific fields and its description wants to be consulted, please check the .xlsx file in the folder you download [here](https://www.ine.es/dyngs/INEbase/es/operacion.htm?c=Estadistica_C&cid=1254736177025&menu=resultados&secc=1254736195110&idp=1254735976596#!tabs-1254736195110). 
+
+*The data base consists of 216726 entries of 56 variables.*
+
+### Data preprocessing
+
+When you download the data from the source, you get a directory called R. In this directory there are instructions and code on how to make the given metadata and microdata as an R data frame. This code was quite outdated so we have updated it and let it in the Annex.
+
+The code combines the .xlsx metadata file explaining all variables with the .txt file containing the info and lastly produces an R data frame with all the data in the correct format.
+
+```{r fichero_salida1, include=FALSE}
+setwd(
+  "C:/Users/marco/Documents/Universidad/Master/GitHub/UC3M/Statistical Learning/MidTerm/datos_2018/R"
+)
+source("MD_EES_2018.R")
+df <- fichero_salida
+```
+The initial configuration of our data is the following:
+
+```{r tablepre, echo=FALSE}
+rmarkdown::paged_table(head(df))
+```
+```{r}
+dim(df)
+```
+
+
+Once we have our data frame we are going to add some of the important metrics the INE recommends.
+
+First we notice that the data was collected in both monthly and annual basis. The monthly information belongs to October and the annual is the complete information for 2018. We will get rid of all the variables for monthly information and make our study for the full year. 
+
+```{r delete1}
+# Drop specified columns
+df <-
+  df[,!names(df) %in% c(
+    "DRELABM",
+    "SIESPM1",
+    "DSIESPM1",
+    "SIESPM2",
+    "ORDENTRA",
+    "SALBASE",
+    "EXTRAORM",
+    "PHEXTRA",
+    "COMSAL",
+    "COMSALTT",
+    "IRPFMES",
+    "COTIZA",
+    "BASE"
+  )]
+
+```
+
+In addition we will add a column representing the full annual salary combining the different types of retribution each individual gets. The formula the INE gives us using column names is:
+
+<small>
+$SALANUAL=(365/DIASANO)*(RETRINOIN+RETRIIN+VESPNOIN+VESPIN)$
+
+Note that several metrics will be also created:
+
+- $DIASANO=DIASRELABA-DSIESPA2-DSIESPA4$
+- $VESPNOIN=(365/DIASANO)*VESPNOIN$
+- $VESPIN=(365/DIASANO)*VESPIN$
+- $DIASRELABA=DRELABAM*30.42+DRELABAD$[^2]
+
+</small>
+
+[^2]:Adjust: IF DIASRELABA >365 THEN DIASRELABA =365)
+
+We will need to take the created variables out of the scope of the analysis because the response variable is a linear combination of them. *SALANUAL* will be our response variable, the one we will be trying to explain and predict using all the other information. 
+
+Finally, some other non informative variables will be dropped:
+
+- FACTOTAL: The elevation factor, an statistical metric.
+- ANOANTI and MESANTI are redundant. They stand for the time anyone has worked in years and in months respectively. MESANTI only is different from 0 if ANOANTI is 0 so we can make everything in months.
+- IDENCCC corresponds to a unique quote index. It has to be ignored.
+
+```{r SALANUAL}
+# Calculate the new columns
+
+df$DIASRELABA <- df$DRELABAM * 30.42 + df$DRELABAD
+# Adjust
+df$DIASRELABA[df$DIASRELABA > 365] <- 365
+
+
+df$DIASANO <- df$DIASRELABA - df$DSIESPA2 - df$DSIESPA4
+
+# Calculate VESPNOIN and VESPIN
+df$VESPNOIN <- (365 / df$DIASANO) * df$VESPNOIN
+df$VESPIN <- (365 / df$DIASANO) * df$VESPIN
+
+
+df$SALANUAL <-
+  (365 / df$DIASANO) * (df$RETRINOIN + df$RETRIIN + df$VESPNOIN + df$VESPIN)
+
+# Drop specified columns
+df <-
+  df[,!names(df) %in% c(
+    "DIASRELABA",
+    "DIASANO",
+    "VESPNOIN",
+    "VESPIN",
+    "RETRINOIN",
+    "RETRIIN" ,
+    "FACTOTAL",
+    "IDENCCC"
+  )]
+
+# Multiply ANOANTI by 12 where ANOANTI is not equal to 0
+df <- df %>%
+  mutate(MESANTI = ifelse(ANOANTI != 0, ANOANTI * 12, MESANTI)) %>%
+  # Drop the MESANTI variable
+  dplyr::select(-ANOANTI)
+```
+
+
+Finally, for most of our techniques, we will prefer not to predict some continuous variable as *SALANUAL* is, but rather a categorical one with several categories. 
+
+For the OECD[^3], the lower class in Spain is the one whose income is below 75% of the national median income; the middle class is between 75% and 200% of the median, and the upper class is the one above 200% of the median. 
+
+According to the OECD estimate for 2019 (around that time), the median income is at $15.193$ euros per year. Therefore, by applying the formulas, lower class people would be those who receive less than $11.395$ euros per year; middle class people are between that figure and $30.386$ euros per year, while the upper class includes all those who receive more than thirty thousand euros per year.
+
+[^3]: Information in this [article](https://www.larazon.es/economia/eres-clase-alta-media-baja-esta-categoria-que-perteneces-sueldo-segun-ocde_20240109659d9f0d872b820001237c5a.html)
+
+This way we can define three classes like:
+```{r classes}
+# Define the thresholds
+thresholds <- c(-Inf, 11395, 30386, Inf)
+
+# Create SALANUAL_CAT variable with three categories
+df <- df %>%
+  mutate(SALANUAL_CAT = cut(
+    SALANUAL,
+    breaks = thresholds,
+    labels = c("Low Class", "Middle Class", "High Class")
+  ))
+```
+
+The resulting classes are:
+
+```{r echo=FALSE}
+table(df$SALANUAL_CAT)
+```
+We can see how middle class is much more represented in the data. We will then focus on this aspect prioritizing the recall of each group when evaluating the models. *This can be done comparing the models based on Sensitivity measure.*
+
+Now we are ready to create our train-test partition and begin the analysis. Note that even though our data set is large, some of the models that we will be applying are computationally expensive because of the tuning and cross validation that will happen. To solve some of the computational problems, we will limit our training set to $16000$ observations and $2000$ entries for the test set. This is enough to perform K-Fold CV and and ensure a correct testing.
+
+```{r train_test}
+set.seed(1234)
+
+# Shuffle the indices randomly
+shuffled_indices <- sample(nrow(df))
+
+# Determine the number of data points for training and testing
+n_train <- 16000
+n_test <- 2000
+
+# Create indices for training and testing sets
+train_indices <- shuffled_indices[1:n_train]
+test_indices <- shuffled_indices[(n_train + 1):(n_train + n_test)]
+
+# Create the training and testing sets
+df_train <- df[train_indices, ]
+df_test<- df[test_indices, ]
+```
+
+
+## Exploratory Data Analysis {.tabset}
+
+With all the preprocessing done we can now see some characteristics of our data.
+
+```{r table1, echo=FALSE}
+rmarkdown::paged_table(head(df_train))
+```
+### By economic activity
+
+In *CNACE* we get a code representing the *ECONOMIC ACTIVITY CODE*, it means, the economic sector in which each individual works. We have the following individuals:
+```{r cnace_table, echo=FALSE}
+rmarkdown::paged_table(data.frame(table(df_train$CNACE)))
+```
+The biggest categories are N0,Q0 and M0. If we consult the [CNAE 2009 table](https://www.cnae.com.es/lista-actividades.php), table that is copied in the informative .xlsx file that comes with the survey data we see this categories correspond to mostly qualified services jobs. This means jobs in administration, science, finance, consultancy, tourism, health...
+
+Even though there are a lot of categories we could try and see if some of these categories tend to have more salary than others. 
+
+```{r cnace_plot, echo=FALSE}
+# Create density plot
+p<-ggplot(df_train, aes(color = CNACE, fill = CNACE)) +
+  geom_density(alpha = 0.6, aes(x = log(SALANUAL))) +
+  labs(x = "log(Annual Salary)", y = "Density", color = "CNACE") +
+  ggtitle("Density Plot of SALANUAL by CNACE") +
+  theme_minimal()
+
+ggplotly(p)
+```
+
+Here we can see how maybe D0 is slightly right deviated meaning people working in the Energy industry tend to earn more.
+
+### By sex
+
+Salary distribution by sex may be also an important thing to be aware of.
+
+```{r plot_sex, echo=FALSE}
+
+g<-ggplot(df_train) +
+  geom_density(alpha = 0.5, aes(x = log(SALANUAL),color = factor(df_train$SEXO, levels = c(1, 6), labels = c("Men", "Women")))) +
+  labs(x = "log(Annual Salary)", y = "Density", color = "Sex", fill = "Sex") +
+  ggtitle("Density Plot of SALANUAL and Sex") +
+  theme_minimal()
+
+ggplotly(g)
+```
+
+Men tend to earn slightly more in mean. We could also check the number of men ad women in high-class income:
+
+```{r, echo=FALSE}
+high_class_table <- df_train %>%
+  filter(SALANUAL_CAT=="High Class") %>%
+  group_by(SEXO) %>%
+  summarise(high_class_count = n())
+
+print(high_class_table)
+
+```
+So even though the men only tend to earn a little bit more in mean than women,it is almost twice as likely to be high class if you are a man.
+
+### By seniority
+
+Also we could try to see if the time spent in a job make you earn more in mean. Also we can check for this by sex.
+
+```{r, echo=FALSE}
+# Create scatter plot
+t<-ggplot(df_train, aes(x = MESANTI, y = SALANUAL, color = SEXO)) +
+  geom_line() +
+  labs(x = "MESANTI", y = "SALANUAL", color = "Sex") +
+  ggtitle("Scatter Plot of SALANUAL by MESANTI and Sex") +
+  theme_minimal()
+
+ggplotly(t)
+```
+Here we can see how not only the number of months spent in a job doesn't make you earn more, but it seems that the highest earning jobs are not very old jobs. Again, men tend to earn more than women.
+
+
+### By education
+
+A similar analysis to the one performed by economic activity may be interesting but with level of education. This is:
+
+```{r edu_plot2, echo=FALSE}
+# Create density plot
+f<-ggplot(df_train, aes(color = ESTU, fill = ESTU)) +
+  geom_density(alpha = 0.6, aes(x = log(SALANUAL))) +
+  labs(x = "log(SALANUAL)", y = "Density", color = "ESTU") +
+  ggtitle("Density Plot of SALANUAL by education") +
+  theme_minimal()
+
+ggplotly(f)
+```
+Category *7* stands for Bachelors and similar, and university doctors and they are the highest paid in average. Categories *1* to *4* are for under High School studies and are surprisingly high in density for the lower end salaries.
+
+### By position
+
+In *CNO1* we get a code representing the *National Ocupation Code*, it means, the position each individual occupies inside its job. We have the following categories:
+```{r cno_table, echo=FALSE}
+rmarkdown::paged_table(data.frame(table(df_train$CNO1)))
+```
+The biggest categories are D0, L0 and C0. If we consult the [CNO-11 table](https://www.ine.es/daco/daco42/clasificaciones/cno11_notas.pdf), table that is copied in the informative .xlsx file that comes with the survey data we see this categories correspond to mostly unqualified industry jobs.
+
+Even though there are a lot of categories we could try and see if some of these categories tend to have more salary than others. 
+
+```{r, echo=FALSE}
+# Create density plot
+q<-ggplot(df_train, aes(color = CNO1, fill = CNO1)) +
+  geom_density(alpha = 0.6, aes(x = log(SALANUAL))) +
+  labs(x = "log(Annual Salary)", y = "Density", color = "CNO1") +
+  ggtitle("Density Plot of SALANUAL by CNACE") +
+  theme_minimal()
+
+ggplotly(q)
+```
+
+The most deviated curve is A0, category that stands for CEO's and managers.
+
+## Statistical Learning Models {.tabset}
+
+#### Methodology
+
+We will be using library `caret` for our analysis due to its ease of use and its cross validation capabilities. Our approach will be making a 3-fold cross validation for all the models and then making an sensitivity comparison for every model.
+
+```{r cv}
+ctrl <- trainControl(method = "repeatedcv",
+                     repeats = 1,
+                     number = 3,
+                     verboseIter = TRUE)
+```
+
+This is because since our classification classes aren't fully balanced, we will prioritize recalling all the data from one class, not classifying the errors nicely as well. This means, if an element doesn't belong to a class, we don't care from which of the other two classes it is, we only care for the class we are predicting.
+
+We ensure this is well done by our caret models by using the [Kappa metric](https://en.wikipedia.org/wiki/Cohen's_kappa) for the model comparison (Kappa metric tends to take into account model imbalances). Please check that the Kappa metric is selected in all of our following codes.
+
+### Bayesian classifiers
+
+A Bayesian classifier is a method used for classification tasks, based on Bayes' theorem. It calculates the probability of a hypothesis being true given the evidence. In simpler terms, it works by looking at the probability of a data point belonging to a certain class given its features. The classifier then selects the class with the highest probability as the predicted label for the input. It's a powerful tool because it can incorporate prior knowledge about the data and update its predictions as it receives new information.
+
+In the course, we have been presented 3 Bayesian classifiers techniques: *QDA, LDA and Naive Bayes*. Since QDA is not recommended for high dimensional mixed-type data sets, we will only perform **LDA** (recommended for multi-class classification) and **Naive Bayes** (recommended for large data sets) classifiers.
+
+```{r lda, echo=TRUE, results='hide'}
+lda <-
+  caret::train(
+    SALANUAL_CAT ~ . - SALANUAL,
+    data = df_train,
+    method = "lda",
+    preProcess = c("center", "scale"),
+    trControl = ctrl, 
+    metric="Kappa"
+  )
+```
+```{r nb, results='hide'}
+nb <-
+  caret::train(
+    SALANUAL_CAT ~ . - SALANUAL,
+    data = df_train,
+    method = "naive_bayes",
+    preProcess = c("center", "scale"),
+    trControl = ctrl,
+    tuneGrid = expand.grid(
+      usekernel = c(TRUE, FALSE),
+      laplace = c(0, 0.5, 1),
+      adjust = c(0.5, 1, 1.5)
+    ), 
+    metric="Kappa"
+  )
+```
+
+### Logistic Regression
+
+Multinomial logistic regression is a statistical method used to predict the probability of multiple categorical outcomes. Unlike binary logistic regression, which deals with only two categories, multinomial logistic regression handles three or more categories simultaneously. It estimates separate sets of coefficients for each outcome category relative to a reference category, describing the relationship between predictor variables and the likelihood of belonging to each category. The model's output provides probabilities for each outcome category, allowing us to classify observations into the most likely category based on the values of the predictor variables.
+
+```{r lr, results='hide'}
+lr <- train(SALANUAL_CAT ~ . - SALANUAL, 
+            method = "glmnet",
+            family = "multinomial",
+            data = df_train,
+            preProcess = c("center", "scale"),
+            tuneGrid = expand.grid(alpha = seq(0, 1, 0.1), lambda = seq(0, .1, 0.01)),
+            metric = "Kappa",
+            trControl = ctrl)
+
+```
+We can see the variable importance for the Logistic Regression Model.
+
+```{r}
+lr_imp <- varImp(lr, scale = F)
+
+plot(lr_imp, top=15)
+```
+Thanks to model importance we can make some interpretations for the coefficients. 
+Here we can see how *GEXTRA*, that stands for extra earnings during the full year, since is continuous money variable is very important. All the other important variables are some categories of specific variables like Education (*ESTU7, ESTU6, ESTU4*) or Type of work schedule (*TIPOJOR2*).
+
+## Results {.tabset}
+
+Once we have our models trained, we now can make some predictions using the test set. In addition, we can compute very easy the confusion matrix from the caret package. This is:
+
+```{r predict}
+lda.pred<-predict(lda,newdata = df_test)
+nb.pred <- predict(nb, newdata = df_test)
+lr.pred<- predict(lr, newdata = df_test)
+```
+Now we can create the confusion matrices:
+
+```{r conf}
+conf_matrix1 <- confusionMatrix(lda.pred, df_test$SALANUAL_CAT)
+conf_matrix2 <- confusionMatrix(nb.pred, df_test$SALANUAL_CAT)
+conf_matrix3 <- confusionMatrix(lr.pred, df_test$SALANUAL_CAT)
+```
+Inside this confusion matrix we can access the True Positives an False Negatives of our testing. We can get the sensitivity (the recall of the positives of each class) by class inside these objects. We are going to make the mean of the sensitivity for all classes and take it as the global performance metric.
+
+```{r byclass}
+conf_matrix1$byClass[,1]
+conf_matrix2$byClass[,1]
+conf_matrix3$byClass[,1]
+```
+Here we can see pretty clear how the Naive Bayes had difficulties recalling the Low Class individuals, so this will seriously affect its performance. LDA and Logistic Regression had similar outcomes.
+
+```{r predict2, echo=FALSE}
+# Extract sensitivity
+LDAsens<-mean(conf_matrix1$byClass[,1])
+NBsens<-mean(conf_matrix2$byClass[,1])
+LRsens<-mean(conf_matrix3$byClass[,1])
+```
+The mean sensitivity for LDA is `r LDAsens`.
+The mean sensitivity for Naive Bayes is `r NBsens`.
+The mean sensitivity for Logistic Regression is `r LRsens`.
+
+```{r last_plots, echo=FALSE}
+# Create a data frame for sensitivity
+df_sensitivity <- data.frame(Model = c("LDA", "Naive Bayes", "Logistic Regression"),
+                             Sensitivity = c(LDAsens, NBsens, LRsens))
+
+# Create a data frame for accuracy
+df_accuracy <- data.frame(Model = c("LDA", "Naive Bayes", "Logistic Regression"),
+                          Accuracy = c(conf_matrix1$overall['Accuracy'], conf_matrix2$overall['Accuracy'], conf_matrix3$overall['Accuracy']))
+
+# Create the sensitivity bar plot
+p1 <- ggplot(df_sensitivity, aes(x = Model, y = Sensitivity, fill = Model)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_brewer(palette = "Pastel1") +
+  labs(x = "Model", y = "Sensitivity", title = "") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Create the accuracy bar plot
+p2<- ggplot(df_accuracy, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_brewer(palette = "Pastel1") +
+  labs(x = "Model", y = "Accuracy", title = "") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+ply1 <- ggplotly(p1)
+ply2 <- ggplotly(p2)
+
+subplot(ply1, ply2, nrows=1)
+```
+
+## Annex
+
+```{r ine, echo=TRUE, eval=FALSE}
+#################################################################################
+# Nombre del programa:	MD_EES_2018.R                                          
+# Autor:              	INE & Marcos Crespo
+# Version:            	4.1
+# Ultima modificacion: 	22 de febrero de 2024
+#                                                                                
+# Descripcion: 
+#	Este programa procesa un fichero de microdatos (md_EES_2018.txt)
+#   a partir de un fichero de metadatos (dr_EES_2018.xlsx) que contiene 
+#   el diseño de registro del archivo de microdatos. 
+#     EES.: Operacion estadistica
+#     2018: Año(s) de produccion de los datos
+#
+# Entrada:                                                           
+#     - Diseño de registro: 	dr_EES_2018.xlsx
+#     - Archivo de microdatos: 	md_EES_2018.txt
+# Salida: 
+#     - Archivo de microdatos en formato data.frame de R: fichero_salida 
+#                                                                                
+#################################################################################
+
+
+assign("flag_num", 0, envir = .GlobalEnv)
+
+atencion = function(mensaje){
+  cat(mensaje)
+  assign("flag_num", 1, envir = .GlobalEnv)
+  
+}
+
+library(openxlsx)
+
+####################    Asignacion de parametros    #######################
+#Recogemos la ruta del script que se esta ejecutando
+
+fichero_micro <- "md_EES_2018.txt"
+fichero_meta  <- "dr_EES_2018.xlsx"
+
+####################     INICIO     #########################
+start.time <- Sys.time()
+cat("\n")
+cat("\n Inicio: ")
+print.Date(start.time)
+t0 <- proc.time()
+
+#Lectura del fichero de metadatos (METAD), Hoja "Dise?o" de archivo .xlsx
+workBook <- loadWorkbook("dr_EES_2018.xlsx")
+df <- read.xlsx(workBook, namedRegion = "METADATOS")
+
+
+nombresVarbls <- df[,1]
+nombresTablas <- df[,2]
+posiciones    <- df[,3]
+tipo          <- df[,4]
+tamanio       <- length(nombresVarbls)
+
+# Lectura del fichero de microdatos (MICROD)
+if(length(df) == 4){
+  cat("Sin formato")
+  
+  #Capturamos las columnas con su tipo de dato
+  tipDatos <- as.vector(sapply(df[,4], function(x){
+    if(identical(x, "A"))
+      "character"
+    else{
+      if(identical(x, "N"))
+        "numeric"
+    }
+  }
+  )
+  )
+  # Lectura del fichero de microdatos (MICROD), decimales con punto en MD  
+  tryCatch((df1 <- read.fwf(file = fichero_micro, widths= posiciones, colClasses=tipDatos)), error=function(e)
+    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecuci?n...", sep = "")))
+  
+}else{
+  formatos <- df[,5]  
+  cat("Con formato")
+  
+  # Lectura del fichero de microdatos (MICROD), decimales sin punto en MD
+  tryCatch((df1 <- read.fortran(file = fichero_micro, format= formatos)), error=function(e)
+    stop(paste("Error. No se encuentra el fichero: ", e, fichero_micro,". Saliendo de la ejecuci?n...", sep = "")))
+}
+
+#Aplicamos los nombres de la cabecera del registro
+names(df1) <- df[,1]
+fichero_salida <- df1
+
+
+#Liberacion de memoria y aclaraci?n de variables 
+#Values
+rm(flag_num,workBook,nombresVarbls,nombresTablas,posiciones,tamanio,df,df1)
+if(length(df) == 4){rm(tipDatos)}
+
+
+# Mensaje final ##########################################
+end.time <- Sys.time()
+cat("\n")
+cat("\n Fin del proceso de lectura: ")
+print.Date(end.time)
+
+TTotal <- proc.time() - t0
+tiempo <- TTotal[3]
+
+if(tiempo < 60){
+  cat(paste("\n Tiempo transcurrido:", format(round(tiempo, 2), nsmall = 2), "segundos"))
+}else{
+  if(tiempo< 3600 & tiempo >= 60){
+    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/60, 2), nsmall = 2), "minutos"))
+  }else{
+    cat(paste("\n Tiempo transcurrido:", format(round(tiempo/3600, 2), nsmall = 2), "horas"))
+  }
+}
+
+```
+
