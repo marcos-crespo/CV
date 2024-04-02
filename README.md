@@ -23,7 +23,7 @@ Below are some of my best projects showcasing my skills and experience in Data S
    Description: Nice little project about some INE (Insituto Nacional Estadística) survey about salaries in Spain on 2018.
    It shows some *complex data acquisition* as well as some fancy data preprocessing. Some knowledge about ggplot2 and ggplotly (interactive plots) is used.
    In addition, a classification approach was intended using some Bayes Classification and Logistic regression.
-   Repository: [Link](https://github.com/marcos-crespo/CV/Salary_2018)
+   Repository: [Link](https://github.com/marcos-crespo/CV/tree/main/Salary_2018)
 
 3. **Project Title 2**
    Description: Brief description of the project.
