@@ -21,13 +21,13 @@ Below are some of my best projects showcasing my skills and experience in Data S
 
 1. **Salary_2018**
    Description: Nice little project about some INE (Insituto Nacional Estadística) survey about salaries in Spain on 2018.
-   It shows some *complex data acquisition* as well as some fancy data preprocessing. Some knowledge about ggplot2 and ggplotly (interactive plots) is used.
-   In addition, a classification approach was intended using some Bayes Classification and Logistic regression.
+   It shows some **complex data acquisition** as well as some fancy data preprocessing. Some knowledge about **ggplot2** and **ggplotly** (interactive plots) is used.
+   In addition, a classification approach was intended using some **Bayes Classification and Logistic regression**.
    Repository: [Link](https://github.com/marcos-crespo/CV/tree/main/Salary_2018)
 
-3. **Project Title 2**
-   Description: Brief description of the project.
-   Repository: [Link](https://github.com/yourusername/project2)
+3. **Matrix chain multiplication**
+   Description: A more theoretical work. Matrix chain multiplication problem is an optimization problem concerning the most efficient way to multiply a given sequence of        matrices. In this document we cover some of its explanantion and implementation of the well-known dynamic programming solution. We use technologies such as advanced          RMarkdown using **tufte handouts**, compiled code using **Rcpp and RcppArmadillo** and some benchmarking.
+   Repository: [Link](https://github.com/marcos-crespo/CV/tree/main/Matrix_Chain)
 
 4. **Project Title 3**
    Description: Brief description of the project.
