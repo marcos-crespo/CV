@@ -1,0 +1,485 @@
+---
+title: "Matrix chain multiplication"
+runningheader: "Matrix chain multiplication" # only for pdf output
+subtitle: "An implementation in R Markdown" # only for html output
+author: "Marcos Crespo Díaz"
+date: "`r Sys.Date()`"
+output:
+  tufte::tufte_handout:
+    citation_package: natbib
+bibliography: bib.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+# List of required libraries
+required_packages <- c("tufte", "microbenchmark", "Rcpp", "RcppArmadillo", "ggplot2")
+
+# Check if each required package is installed
+missing_packages <- required_packages[!required_packages %in% installed.packages()]
+
+# Install missing packages
+if (length(missing_packages) > 0) {
+  message("Installing missing packages: ", paste(missing_packages, collapse = ", "))
+  install.packages(missing_packages, dependencies = TRUE)
+} else {
+  message("All required packages are already installed.")
+}
+
+# invalidate cache when the tufte version changes
+knitr::opts_chunk$set(cache.extra = packageVersion('tufte'), cache=TRUE)
+```
+# Introduction
+\begin{fullwidth}
+The aim of this document is to solve the four tasks proposed as deliverables for the course \textit{High Performance Computing for Data Science} of the \textit{MSc Statistics for Data Science} at \textit{UC3M}. The assignment focuses on the problem of chain matrix multiplication and associativity. 
+The objective of this course is to find intelligent and efficient solutions using different tools that the R environment provides us to solve computationally complicated or demanding problems. 
+\end{fullwidth}
+
+## About the assignment
+
+The [\textcolor{OliveGreen}{matrix chain multiplication problem}](https://en.wikipedia.org/wiki/Matrix_chain_multiplication) addresses the optimization problem of finding the most efficient sequence for multiplying a given series of matrices. The objective isn't to execute the multiplications themselves but rather to determine the order in which these matrix multiplications should occur.
+
+This efficiency can be measured both in number of required operations^[Note that given two matrices of dimensions $\mathcal{X}\times\mathcal{Y}$ and $\mathcal{Y}\times\mathcal{Z}$ it takes $\mathcal{X}*\mathcal{Y}*\mathcal{Z}$ operations to compute the result] or in computation time^[Time elapsed between the beginning of the process and when it finishes]. 
+
+Matrix chain multiplication is a subject of study for High Performance computing. The computational challenge arises from the associative property of matrix multiplication. This property leads to multiple ways of computing the product of matrices (with the same result), resulting in variations in number of operations needed to perform the multiplication. If the difference in operations is very big from one parenthesization to another, then the computational cost may be very different.
+
+Determining the best parenthesization is not an easy task, since the number of possible parenthesizations of a set of matrices is exponential^[The number of ways to parenthesize an expression of $n+1$ terms is given by the $n^{th}$ Catalan number $C_n=\frac{1}{n+1}\binom{2n}{n}$].
+
+The tasks that have to be solved are four:
+
+- Task 1: Find a compelling example of the multiplication of 5 matrices in which the default ordering^[`A%*%B%*%C%*%D%*%E`] takes considerably more time than some custom parenthesization. Show this with a benchmark. Analyse the number of operations for each case and discuss the results.
+
+- Task 2: Implement a C++ function that takes 5 matrices as input and multiplies them using library RcppArmadillo without any parenthesization. Discuss the results.
+
+- Task 3: Implement a C++ function that takes a list of matrices and a vector defining the multiplication order, and performs the operations in the specified order using RcppArmadillo. Compare it with the previous case for the best parenthesization.
+
+- Task 4: Investigate further in the scientific literature about the matrix chain ordering problem, specifically about the available algorithms. Implement at least one algorithm that solves the problem and produces a vector defining the multiplication order. Use it in conjunction with the function from task 3 to compare the approach of solving the matrix chain ordering problem and perform the product in the resulting order vs. R's best and worst cases (task 1) vs. Armadillo's naive approach (task 2).
+
+## Methodology
+
+In the resolution of this assignment we will be using several R libraries and functionalities. First, in order to measure the performance of the different functions and operations we compare, we will be using `microbenchmark` [@microbench] package with $1000$ repetitions of each operation and compare the means^[This is the $\frac{1}{n}\sum{t_i}$ of all the execution times $t_i$ for each process].
+
+Which function is the fastest will be easily visualize using custom bar plots.
+
+Finally, in order to speed up the computations we will be using `Rcpp`[@Rcpp]. Rcpp is a package for R that facilitates integration of C++ code. It allows for seamless calling of C++ functions from R, enhancing performance thanks to the compiled nature of the language. This will be very useful.
+
+Furthermore, matrix are typically critical objects when programming, because matrix operations are normally computationally expensive^[Matrix chain multiplication is an example]. Several libraries exist in order to enhance the computation of matrix multiplications and we will be using `RcppArmadillo` [@arma] library.
+
+## Advantages of Using Armadillo
+
+- **Concise Syntax**: Armadillo simplifies the syntax for matrix operations, making the code more readable and maintainable.
+- **Efficiency**: Armadillo leverages optimized algorithms for high-performance numerical computing.
+- **Integration with Rcpp**: Rcpp facilitates seamless integration between R objects and C++ data structures, allowing efficient computation with Armadillo within an R environment.
+
+This approach offers a powerful and efficient solution for matrix multiplication tasks within R using C++.
+
+# Task 1
+
+Given a set of matrices $\mathcal{A}_{50\times15}$, $\mathcal{B}_{15\times70}$, $\mathcal{C}_{70\times10}$, $\mathcal{D}_{10\times50}$, $\mathcal{E}_{50\times2}$; the naive multiplication  $\mathcal{A}\mathcal{B}\mathcal{C}\mathcal{D}\mathcal{E}$ takes `r 50*15*70+50*70*10+50*10*50+50*2*50` operations^[$50*15*70+50*70*10+50*10*50+50*2*50$].
+
+Now, lets consider some different parenthesization, for example $\mathcal{A}(\mathcal{B}\mathcal{C})\mathcal{D}\mathcal{E}$. The number of operations involved are now `r 15*70*10+50*15*10+50*10*50+50*50*2`.^[$15*70*10+50*15*10+50*10*50+50*50*2$] This is a reduction of nearly `r (1-(15*70*10+50*15*10+50*10*50+50*50*2)/(50*15*70+50*70*10+50*10*50+50*2*50))*100`$\%$ of the complexity compared to the naive approach. 
+
+Furthermore, lets consider now the order  $\mathcal{A}((\mathcal{B}\mathcal{C})(\mathcal{D}\mathcal{E))}$. Now the number of operations involved are `r 15*70*10+10*50*2+10*50*2+50*15*2`.^[$15*70*10+10*50*2+10*50*2+50*15*2=$] This time the reduction is `r (1-(15*70*10+10*50*2+10*50*2+50*15*2)/(50*15*70+50*70*10+50*10*50+50*2*50))*100`$\%$ compared to the standard approach but also `r (1-(15*70*10+10*50*2+10*50*2+50*15*2)/(15*70*10+50*15*10+50*10*50+50*50*2))*100`$\%$ compared to the second approach. 
+
+Lets create some virtual matrices for visualizing this results:
+
+```{r}
+A <- matrix(rnorm(50 * 15), nrow = 50, ncol = 15)
+B <- matrix(rnorm(15 * 70), nrow = 15, ncol = 70)
+C <- matrix(rnorm(70 * 10), nrow = 70, ncol = 10)
+D <- matrix(rnorm(10 * 50), nrow = 10, ncol = 50)
+E <- matrix(rnorm(50 * 2), nrow = 50, ncol = 2)
+```
+```{r table1, fig.fullwidth=TRUE}
+res0 <-  microbenchmark::microbenchmark(A %*% B %*% C %*% D %*% E,
+                                        A %*% (B %*% C) %*% D %*% E,
+                                        A %*% ((B %*% C) %*% (D %*% E)),
+                                        times = 1000)
+```
+```{r, echo=FALSE}
+knitr::kable(
+  summary(res0), caption = 'First Benchmark'
+)
+```
+
+
+
+```{r plot1, echo=FALSE, fig.cap='Benchmark for first examples', fig.margin=TRUE, fig.height=4.5}
+barplot(summary(res0)[,4], names.arg = c('Naive R', 'First order', 'Best oder'), col=c('aquamarine','aquamarine3', 'aquamarine4'), ylab='microseconds')
+```
+
+# Task 2
+
+In this task we need to create a C++ function `multiplyFiveMatrices` that takes five `RcppArmadilllo::mat` objects as input, representing matrices A, B, C, D, and E and multiply them in the naive order^[Note that an additional function `checkMatrixDimensions()`has been created in order to ensure the dimensions of the matrices the user is trying to multiply are viable.].
+
+```{Rcpp task2}
+#include <RcppArmadillo.h>
+using namespace arma;
+// [[Rcpp::depends(RcppArmadillo)]]
+
+
+//Function to check if the matrices are of valid dimensions
+bool checkMatrixDimensions(const arma::mat& A, const arma::mat& B) {
+  int ncolA = A.n_cols;
+  int nrowB = B.n_rows;
+  
+  //Boolean value
+  return (ncolA == nrowB);
+}
+
+// Function to multiply five matrices
+// Outputs are returned as Rcpp::NumericMatrix objects. Inputs are arma::mat
+// [[Rcpp::export]]
+Rcpp::NumericMatrix multiplyFiveMatrices(arma::mat A, arma::mat B,
+                                        arma::mat C, arma::mat D,
+                                        arma::mat E) {
+
+  // Check for dimensions
+  if (checkMatrixDimensions(A, B) && checkMatrixDimensions(B, C) &&
+      checkMatrixDimensions(C, D) && checkMatrixDimensions(D, E)) {
+
+    // Multiply matrices without explicit parenthesization
+    arma::mat result = A*B*C*D*E;
+
+    // Convert Armadillo matrix back to Rcpp::NumericMatrix
+    Rcpp::NumericMatrix resultR = Rcpp::wrap(result);
+
+    return resultR;
+  } else {
+    Rcpp::Rcerr << "Wrong matrix dimensions, please provide correct matrices" << std::endl;
+    // Return an empty matrix to indicate failure
+    return Rcpp::NumericMatrix();
+  }
+}
+
+```
+
+Now we can perform a benchmark to compare it to the naive approach using base R and the best example approach using R.^[Take into account that we are using `RcppArmaillo` matrices because it is the fastest way to multiply them in C++, not because it is necessarily faster than in R. R matrix multiplication is very fast using `%*%`] This is:
+
+\newpage
+
+```{r, echo=TRUE}
+res <-  microbenchmark::microbenchmark(A %*% B %*% C %*% D %*% E,
+                                       A %*% ((B %*% C) %*% (D %*% E)),
+                                       multiplyFiveMatrices(A, B, C, D, E),
+                                       times = 1000)
+```
+
+```{r, echo=FALSE}
+knitr::kable(
+  summary(res), caption = 'Second Benchmark'
+)
+```
+
+
+```{r, fig.cap='Naive R, nice order and Naive C++ benchmark', echo=FALSE, fig.margin=TRUE, fig.height=4.5, echo=FALSE}
+barplot(summary(res)[,4], names.arg = c('Naive R', 'Best R order', 'Naive C++ order'), col=c('aquamarine','aquamarine3', 'aquamarine4'), ylab='microseconds')
+```
+
+
+The results show how even though the Naive multiplication in R is completely outperformed by the C++ implementation with a $\times2$ boost in performance, this increment is not enough to beat the (nearly) best parenthesization. 
+
+# Task 3
+
+In task 3 we are asked to implement a function that performs the actual matrix multiplication in a desired order. The matrices should be in a list and the order needs to be a vector.
+
+This task seems easy but it has several complications that quickly become apparent as soon as you stop to think about it. The first thing is how to represent the order.
+
+Let $n$ be the number of matrices you want to multiply. The `order` vector just can't be whatever n-sized vector of integers between $1,\ldots,n$.^[This may result in some multiplications that are unfeasible. In the example of task 1, the vector $(1,5,2,3,4)$.] After discussing with the teacher and some classmates about this fact, the best approach seemed to indicate the multiplicaton order as a *0-indexed vector representing the multiplication itself, not the matrix*.^[This is, in the example of task 1, $0$ would represent the multiplication between $\mathcal{A}$ and $\mathcal{B}$,  $1$ would represent the multiplication between $\mathcal{B}$ and $\mathcal{C}$. The parenthesization $(\mathcal{A}\mathcal{B})\mathcal{C}(\mathcal{D}\mathcal{E})$ will be the vector $(0,3,1,2)$.] This indexation may cause non-uniqness in the representation but this is no issue in our problem^[For example the $(\mathcal{A}\mathcal{B})\mathcal{C}(\mathcal{D}\mathcal{E})$ is $(0,3,1,2)$ but also $(0,1,3,2)$].
+
+Now we have decided how to represent the ordering there is one more thing we have to consider. This is the accumulating of matrices in one side of the multiplication^[In the $(\mathcal{A}\mathcal{B})\mathcal{C}(\mathcal{D}\mathcal{E})$, when the $1$ multiplication is been performed, the matrix multiplied are not only $\mathcal{B}\text{ and }\mathcal{C}$. The left side of the multiplication is $\mathcal{A}\mathcal{B}$.]. This aspect may seem trivial while mental computation but when abstracting an algorithm represent some serious issues.
+
+The solution we have created for this problem was a history steps vector in order to save the accumulating values each time a multiplication is performed as well as a indicator and and index of whether a multiplication has been performed and when. 
+
+The way this functions is simple, for each multiplication in the order vector, we check is the previous or the next multiplication has been performed^[Looking for its Boolean value in the `indicator` vector.] in order to check for possible accumulations. If it has been performed it checks when has it been performed^[In the `index` vector] and goes to that step in the history^[In the `steps` vector] to recall the specific value of that accumulation. The result of the operation would be the last step in the history when every computation in the order vector is been done. If it has not, then the matrix is taken from the input list. When the operation is performed the result is saved in the history vector and it repeats for the next multiplication.
+
+Note that the integrity of the matrices is not compromised since the dimensions are always preserved. If the order vector is well defined, this algorithm converges always. 
+
+The function is the following. It takes a list of matrices and the order vector and multiply them by steps. In each step the left and right hand side of the multiplication are recalled separately.^[Note that the cases for first and last multiplication have been excluded from the conditionals because of index issues.] We will be using also `arma::mat`objects because of its quick multipication.
+
+```{Rcpp}
+#include <RcppArmadillo.h>
+using namespace Rcpp;
+
+// [[Rcpp::depends(RcppArmadillo)]]
+
+// Check matrices dimensions
+bool checkMatrixDimensions(const Rcpp::NumericMatrix& A, const Rcpp::NumericMatrix& B) {
+    int ncolA = A.ncol();
+    int nrowB = B.nrow();
+    // Check if dimensions are suitable for multiplication
+    return (ncolA == nrowB);
+}
+
+// Functions for the well-definition of the order vector
+// Checks for duplicates
+bool anyDuplicates(IntegerVector vec) {
+    std::unordered_set<double> seen;
+    for (int i = 0; i < vec.size(); ++i) {
+        if (seen.find(vec[i]) != seen.end()) {
+            return true;
+        } else {
+            seen.insert(vec[i]);
+        }
+    }
+    return false;
+}
+
+// Checks dimension
+bool checkDimensions(IntegerVector vec, int dims) {
+    for (int i = 0; i < vec.size(); ++i) {
+        if (vec[i] > dims) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// [[Rcpp::export]]
+arma::mat matrixChainMultiplication(List matrices, IntegerVector order) {
+    // Check if the order vector is valid
+    if (order.size() != matrices.size() - 1) {
+        Rcpp::stop("Invalid order vector size");
+    }
+    for(int i = 0; i < matrices.size() - 1; i++) {
+        if (!checkMatrixDimensions(matrices[i], matrices[i + 1])) {
+            Rcpp::stop("Invalid matrices sizes. Check matrix dimensions");
+        }
+    }
+    if (anyDuplicates(order)) {
+        Rcpp::stop("Invalid order vector. Check for duplicates");
+    }
+    if (!checkDimensions(order, matrices.size() - 2)) {
+        Rcpp::stop("Invalid order number. Number out of bounds");
+    }
+  
+    LogicalVector indicator(order.size(), false);
+    IntegerVector index(order.size());
+    std::vector<arma::mat> steps(order.size());
+    int cont = 1;
+    arma::mat l, r;
+  
+    for (int i = 0; i < order.size(); i++) {
+        int curr_order = order[i];
+        if (curr_order == 0) {
+            // First iteration
+            l = as<arma::mat>(matrices[0]);
+            if (!indicator[curr_order + 1]) {
+                r = as<arma::mat>(matrices[curr_order + 1]);
+            } else {
+                r = steps[index[curr_order + 1]-1];
+            }
+        //last iteration    
+        } else if (curr_order == order.size() - 1) {
+            r = as<arma::mat>(matrices[matrices.size() - 1]);
+            if (!indicator[curr_order - 1]) {
+                l = as<arma::mat>(matrices[curr_order]);
+            } else {
+                l = steps[index[curr_order - 1]-1];
+            }
+        //general logic    
+        } else {
+            if (!indicator[curr_order - 1]) {
+                l = as<arma::mat>(matrices[curr_order]);
+            } else {
+                l = steps[index[curr_order - 1]-1];
+            }
+            if (!indicator[curr_order + 1]) {
+                r = as<arma::mat>(matrices[curr_order + 1]);
+            } else {
+                r = steps[index[curr_order + 1]-1];
+            }
+        }
+        steps[i] = l * r;
+        indicator[curr_order]=true;
+        index[curr_order] = cont;
+        cont++;
+    }
+
+    return steps[order.size() - 1];
+}
+
+
+
+```
+
+See that this function works as expected
+
+```{r check}
+matrices <- list(A,B,C,D,E)
+order <- as.integer(c(3,2,1,0))
+
+head(matrixChainMultiplication(matrices, order))
+head((A %*% B %*% C %*% D %*% E))
+
+```
+We can now compare the best orderig found in task 1 both in R and C++. This is:
+```{r comp2}
+res1 <-
+  microbenchmark::microbenchmark(A %*% ((B %*% C) %*% (D %*% E)),
+                                 matrixChainMultiplication(matrices, as.integer(c(1, 3, 2, 0))),
+                                 times = 1000)
+```
+```{r, echo=FALSE}
+knitr::kable(
+  summary(res1), caption = 'Third Benchmark'
+)
+```
+
+
+```{r, fig.cap='Naive R, nice order and Naive C++ benchmark', echo=FALSE, fig.margin=TRUE, fig.height=4.5, echo=FALSE}
+barplot(summary(res1)[,4], names.arg = c('Best R order', 'Best C++ order'), col=c('aquamarine','aquamarine4'), ylab='microseconds')
+```
+This result is pretty surprising. We expected the C++ implementation to be much faster than the R implementation. Assuming the implementation in C++ can't be improved (which isn't true), this illustrates how well R multiplies matrices as a matter of fact. RcppArmadillo is fast but takes its time. This also illustrates how the problem of this assignment is not making the multiplications, but deciding which is the optimal order.
+
+# Task 4
+
+Several solutions exist, and in this document we will be exploring the Dynamic Programming approach with memoization[@enwiki:1192037372].
+
+The dynamic programming solution for the matrix chain multiplication problem involves breaking down the problem into smaller sub problems and solving them iteratively. The idea is to compute the minimum number of multiplications required to multiply a sequence of matrices.
+
+This solution builds a table where each entry (i, j) represents the minimum number of multiplications needed to multiply matrices from i to j. The time complexity of this approach is $O(n^3)$, where $n$ is the number of matrices in the sequence. By applying memoization^[Memoization is a technique used to optimize recursive algorithms by storing the results of expensive function calls and reusing them when the same inputs occur again.], we can reduce the time complexity to $O(2^n)$ by avoiding redundant computations.
+
+Exponential algorithms always seem as a *wannabe* in computer science. There is a solution in the scientific literature from [@uwu] that allows for a $O(nlogn)$ algorithm in order to determine the best multiplication order given a matrix chain. This is achieved by the identification of the matrix chain multiplication problem with the partition of convex polygons problem with costs. This solution is very interesting but it has not been implemented because of its theoretical complexity.
+
+However the solution given in this document is very understandable. The following function is iterative. For each (double) iteration, the cost in terms of computations is updated if the new cost is better than the olds one. In order not to get a matrix representation, a recursive algorithm has been used in order to reconstruct the parenthesization with the help of [AI](https://chat.openai.com/).
+
+The easiest way^[memory-wise and more general for other problems] to make the function is to give it as input a vector of the chain representation of the dimensions of the matrices^[This is without the duplicates resulting from the column-row equities and the values in order of multiplication]. Note that a function to automatically generate this vector is given.
+
+The output of the function consists of the matrix with the costs and the reconstruction of the parenthesization.
+
+```{Rcpp}
+#include <RcppArmadillo.h>
+using namespace Rcpp;
+using namespace arma;
+
+// Function to compute minimum number of scalar multiplications and optimal parenthesization
+// dims: dimensions of matrices
+// Returns a list containing the minimum cost matrix and the optimal split points matrix
+// [[Rcpp::depends(RcppArmadillo)]]
+// [[Rcpp::export]]
+List matrixChainMultDP(arma::ivec dims) {
+  int n = dims.size() - 1;
+  arma::imat m(n, n, arma::fill::zeros); // Minimum number of scalar multiplications
+  arma::imat s(n, n, arma::fill::zeros); // Index of the subsequence split achieving minimal cost
+
+  // Dynamic programming approach to compute minimum number of scalar multiplications
+  for (int len = 2; len <= n; len++) {
+    for (int i = 0; i < n - len + 1; i++) {
+      int j = i + len - 1;
+      m(i, j) = std::numeric_limits<int>::max();
+      for (int k = i; k < j; k++) {
+        int cost = m(i, k) + m(k + 1, j) + dims(i) * dims(k + 1) * dims(j + 1);
+        if (cost < m(i, j)) {
+          m(i, j) = cost;
+          s(i, j) = k;
+        }
+      }
+    }
+  }
+
+  // Function to recursively construct optimal parenthesization
+  std::function<std::string(int, int)> constructOptimalParenthesization;
+  constructOptimalParenthesization = [&](int i, int j) -> std::string {
+    if (i == j) {
+      return "M" + std::to_string(i + 1);
+    } else {
+      int k = s(i, j);
+      std::string left = "(" + constructOptimalParenthesization(i, k) + ")";
+      std::string right = "(" + constructOptimalParenthesization(k + 1, j) + ")";
+      return left + "*" + right;
+    }
+  };
+
+  std::string optimalParenthesization = constructOptimalParenthesization(0, n - 1);
+
+  return List::create(Named("minCostMatrix", m), 
+                      Named("optimalParenthesization", optimalParenthesization));
+}
+
+// Function to create array of dimensions from list of matrices
+// matrices: list of matrices
+// Returns array of dimensions
+// [[Rcpp::export]]
+arma::ivec createDimsVector(List matrices) {
+  int n = matrices.size();
+  arma::ivec dims(n + 1);
+
+  for (int i = 0; i < n; i++) {
+    NumericMatrix mat = matrices[i];
+    dims[i] = mat.nrow();
+  }
+  dims[n] = as<NumericMatrix>(matrices[n - 1]).ncol();
+
+  return dims;
+}
+```
+
+Lets try the function for our task 1 examples:
+```{r}
+dims <- createDimsVector(matrices)
+result <- matrixChainMultDP(dims)
+print(result$optimalParenthesization)
+```
+
+We could also try it with some computational expensive matrices. The optimal order for a 10 big matrices chain is:
+
+```{r}
+# Create a chain of 10 matrices with extreme dimensions
+matrices_big <- list()
+
+matrices_big[[1]] <- matrix(nrow = 1000, ncol = 4)
+matrices_big[[2]] <- matrix(nrow = 4, ncol = 1340)
+matrices_big[[3]] <- matrix(nrow = 1340, ncol = 400)
+matrices_big[[4]] <- matrix(nrow = 400, ncol = 400)
+matrices_big[[5]] <- matrix(nrow = 400, ncol = 23)
+matrices_big[[6]] <- matrix(nrow = 23, ncol = 1000)
+matrices_big[[7]] <- matrix(nrow = 1000, ncol = 7)
+matrices_big[[8]] <- matrix(nrow = 7, ncol = 6)
+matrices_big[[9]] <- matrix(nrow = 6, ncol = 30)
+matrices_big[[10]] <- matrix(nrow = 30, ncol = 2)
+
+dims_big <- createDimsVector(matrices_big)
+result_big <- matrixChainMultDP(dims_big)
+print(result_big$minCostMatrix)
+print(result_big$optimalParenthesization)
+
+```
+We can compare this results with the naive order reducing the times the `microbenchmark`function performs the operations.
+
+```{r}
+res2 <-  microbenchmark::microbenchmark(
+  matrices_big[[1]] %*% matrices_big[[2]] %*% matrices_big[[3]] %*% matrices_big[[4]]
+  %*% matrices_big[[5]] %*% matrices_big[[6]] %*% matrices_big[[7]] %*% 
+  matrices_big[[8]] %*% matrices_big[[9]] %*% matrices_big[[10]],
+  matrices_big[[1]] %*% (matrices_big[[2]] %*% (matrices_big[[3]] %*% 
+  ( matrices_big[[4]] %*% ( matrices_big[[5]] %*% (matrices_big[[6]] %*% 
+  ( matrices_big[[7]] %*% (matrices_big[[8]] %*% ( matrices_big[[9]] %*% 
+  matrices_big[[10]])))))))),
+    matrixChainMultiplication(matrices_big, as.integer(c(2, 8, 7, 6, 5, 4, 3, 1, 0))),
+    times = 10
+  )
+```
+
+
+```{r, fig.cap='Naive R, nice order and Naive C++ benchmark', echo=FALSE, fig.margin=TRUE, fig.height=4.5, echo=FALSE}
+barplot(summary(res2)[,4], names.arg = c('Naive R order', 'Optimal order in base R', 'Optimal order in C++'), col=c('aquamarine', 'aquamarine2','aquamarine4'), ylab='microseconds')
+```
+This results verify the results of the previous section.
+
+# Further work
+
+Having solved all four of the tasks required in this assignment, some further topics may arise. 
+
+Talking about programming, a function that translates automatically the output of the `matrixChainMultDP()` function to a 0-indexed vector as the input of the `matrixChainMultiplication()` function seem like the next step. This has not been done because of deadline issues. This implementation will help in order to communicate both functions in a nested way. It may be interesting if the user wants to create a package for example.
+
+Talking about performance, two main topics point out. The first of them is to implement the $O(nlogn)$ solution and compare it to the exponential one in order to show its power. As we have commented, this solution requires deep mathematical concepts. 
+
+On the other hand, the Dynamic Programming procedure has a 3-nested loop block inside it. This nested loops are always object of parallelization. Parallel programming may be useful to *mitigate* the effects of exponential behaviour by using several cores in the computation. This could be achieved using C++ libraries such as `RcppParallel`and `OpenMP`. Also a version in R using parallel programming may be interesting to compare the results. Even though the parallel programming was inside the scope of this course, deadlines are often hard to meet and even though we tried a few examples, C++ debugging is difficult and we couldn't make it to work. It will be surely explored in future works.
+
+# References
+
+```{r bib, include=FALSE}
+# create a bib file for the R packages used in this document
+knitr::write_bib(c('base', 'rmarkdown'), file = 'bib.bib')
+```
