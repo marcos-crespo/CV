@@ -49,7 +49,6 @@ fit_tecator<- function() {
   data <- cbind(tecator$absorp.fdata$data, tecator$y)
   
   # Train - test split of the data
-  set.seed(123)
   trainData <- data[1:160,]
   testData <- data[161:215,]
   
@@ -110,7 +109,7 @@ fit_tecator<- function() {
   integrals <- sapply(1:length(non_outlier_indices), function(i) compute_integral(fd_object2, i))
   
   train_Outlier$Spectral_Integral <- integrals
-  # Apply the MAR mechanism to the training data. 0.0035 -> 30 missings. 0.0001 -> 60
+  # Apply the MAR mechanism to the training data. 0.0035 -> 30 missings. 0.0008 -> 70
   train_MAR <- apply_mar_mechanism(train_Outlier,0.0008)
   
   print(paste0('NAs introduced: ', sum(is.na(train_MAR$Fat))))
@@ -150,7 +149,7 @@ fit_tecator<- function() {
 
   
   # SE between real and estimated MAR responses
-  impValues_kernel_se <- sum((pred - train_Outlier$Fat[na_indices])^2)/length(na_indices)
+  impValues_kernel_mse <- sum((pred - train_Outlier$Fat[na_indices])^2)/length(na_indices)
   
   ### Test predictions with MAR and Fitted models
   pred_kernel_mar <- predict(
@@ -200,7 +199,7 @@ fit_tecator<- function() {
   print('knn imputed fit')
 
   # se between real and estimated MAR responses
-  impValues_knn_se <- sum((pred - train_Outlier$Fat[na_indices])^2)/length(na_indices)
+  impValues_knn_mse <- sum((pred - train_Outlier$Fat[na_indices])^2)/length(na_indices)
   
   ### Test predictions with MAR and Fitted models
   pred_knn_mar <- predict(
@@ -257,8 +256,8 @@ fit_tecator<- function() {
   
   
   list(
-    imputation_kernel_error = impValues_kernel_se,
-    imputation_knn_error = impValues_knn_se,
+    imputation_kernel_error = impValues_kernel_mse,
+    imputation_knn_error = impValues_knn_mse,
     kernelMAR_test_MSEP = pred_kernel_mar$MSEP.1,
     kernelIMP_test_MSEP = pred_kernel_imp$MSEP.1,
     kernelFULL_MSEP = pred_kernel_full$MSEP.1,
