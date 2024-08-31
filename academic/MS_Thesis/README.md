@@ -3,7 +3,8 @@ This repository contains all the scripts necessary to replicate the results give
 
 # Requirements
 In order to run the code, please install package ´requiRements' in RStudio and then run the following lines:
+```
   vec <- c('fda', 'fda.usc', 'fsemipar', 'dplyr', 'MASS', 'xtable', 'ggplot2', 'patchwork', 'tidyr', 'stringr')
   requiRements::install(packages=vec)
-
+```
 Please check the license and feel free to contact me if any issue or doubt with the information given at my main page.
