@@ -1,6 +1,8 @@
 # Important information
 This repository contains all the scripts necessary to replicate the results given in the *MS Thesis* **Semi-Functional Partial Linear Single-Index Model with Missing at Random responses** by Marcos Crespo, directed by Silvia Novo Díaz @UC3M.
 
+Also, the MS Thesis memory can be read in 'SFPLSIM-MAR.pdf' document
+
 # Requirements
 In order to run the code, please install package ´requiRements' in RStudio and then run the following lines:
 ```
