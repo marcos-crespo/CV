@@ -19,7 +19,7 @@ You can find my latest CV in this repository. It includes details about my educa
 
 Below are some of my best projects showcasing my skills and experience in Data Science:
 
-1. **Project Title 3**
+1. **Logit_Regr_Optimization**
    Description:  A mix between theoretical and practical work. In this project I go through several **numerical methods** to optimize the estimation of the model parameters in a *logistic regression* model using **python**. The main objective is to explain the main characteristics and use cases of each method from a rigourous point of view. This is a complete ad extense document. Some of the technologies here showcased are: **Advanced Jupyter notebook, Numpy and Matplotlib** as well as some *Sklearn and Scipy*.
    Repository: [Link](https://github.com/marcos-crespo/CV/tree/main/Logit_Regr_Optimization)
 
