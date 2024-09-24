@@ -4,7 +4,11 @@ Welcome to my Data Science portfolio repository! Here you'll find my Curriculum 
 
 ## About Me
 
-I'm Marcos Crespo, currently pursuing a Master's in Statistics in Data Science at UC3M. With a background in mathematics and fluency in English (C1 level), I'm passionate about using data to solve real-world problems and extract actionable insights.
+👉🏻Junior Data Scientist: focused on Machine Learning, Statistical Learning and functional data. Starting in the world of Deep Learning and GenAI.
+
+👉🏻Mathematician with MS in Statistics for Data Science at Universidad Carlos III de Madrid (UC3M). 
+
+I am motivated by working on ambitious projects, loaded with new technologies. Data Science should be a tool to achieve business and personal goals in a fast and rigorous way. I work well in a team in a bilingual environment (C1) and I am always looking for new opportunities and trends in the data world.
 
 ## Contents
 
