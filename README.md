@@ -1,14 +1,14 @@
 # Marcos Crespo - Data Science Portfolio
 
-Welcome to my Data Science portfolio repository! Here you'll find my Curriculum Vitae (CV) and some of my best projects in the field of Data Science.
+Welcome to my Data Science portfolio repository! Here you'll find my Curriculum Vitae (CV) and some of my projects.
 
 ## About Me
 
-👉🏻Junior Data Scientist: focused on Machine Learning, Statistical Learning and functional data. Starting in the world of Deep Learning and GenAI.
+👉🏻Data Scientist: focused on Machine Learning and GenAI.
 
 👉🏻Mathematician with MS in Statistics for Data Science at Universidad Carlos III de Madrid (UC3M). 
 
-I am motivated by working on ambitious projects, loaded with new technologies. Data Science should be a tool to achieve business and personal goals in a fast and rigorous way. I work well in a team in a bilingual environment (C1) and I am always looking for new opportunities and trends in the data world.
+I am motivated by working on ambitious projects, loaded with new technologies. Data Science should be a tool to achieve business and personal goals in a fast and rigorous way. 
 
 ## Contents
 
@@ -21,7 +21,7 @@ You can find my latest CV in this repository. It includes details about my educa
 
 ### Projects
 
-Below are some of my best projects showcasing my skills and experience in Data Science:
+Below are some of my best projects showcasing my skills and experience in Data Science. Currently I'm working on some ambitious GenAI projects so this are mainly ML projects. Keep in touch to see future work!
 
 1. **Logit_Regr_Optimization**
    Description:  A mix between theoretical and practical work. In this project I go through several **numerical methods** to optimize the estimation of the model parameters in a *logistic regression* model using **python**. The main objective is to explain the main characteristics and use cases of each method from a rigourous point of view. This is a complete ad extense document. Some of the technologies here showcased are: **Advanced Jupyter notebook, Numpy and Matplotlib** as well as some *Sklearn and Scipy*.
