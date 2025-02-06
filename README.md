@@ -4,7 +4,7 @@ Welcome to my Data Science portfolio repository! Here you'll find my Curriculum 
 
 ## About Me
 
-👉🏻Data Scientist: focused on Machine Learning and GenAI.
+👉🏻Data Scientist and AI Engineer: focused on Machine Learning and GenAI.
 
 👉🏻Mathematician with MS in Statistics for Data Science at Universidad Carlos III de Madrid (UC3M). 
 
@@ -14,10 +14,7 @@ I am motivated by working on ambitious projects, loaded with new technologies. D
 
 ### Curriculum Vitae (CV)
 
-You can find my latest CV in this repository. It includes details about my education, skills, work experience, and more. It can be found both in Spanish and in English.
-
-- CV_SP.pdf
-- CV_EN.pdf
+You can find my latest CV in this repository. It includes details about my education, skills, work experience, and more.
 
 ### Projects
 
